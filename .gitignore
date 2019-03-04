@@ -1,5 +1,15 @@
+#scripts
+*.bat
+
+#data
+*.dat
+*.bmp
+
+#vscode project files
+.vscode/
+
 #netbeans project files
-*/nbproject/*
+nbproject/
 
 # Prerequisites
 *.d
