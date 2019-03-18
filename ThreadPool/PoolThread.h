@@ -12,21 +12,19 @@
 
 class ThreadPool;
 
-int partialFutex(int *uaddr, int futex_op, int val);
-
 class PoolThread : std::thread {
     friend class ThreadPool;
 public:
     PoolThread(ThreadPool* threadPool);
     PoolThread(const PoolThread& orig) = delete;
+    PoolThread(PoolThread&& orig) = default;
     PoolThread& operator = (const PoolThread& orig) = delete;
+    PoolThread& operator = (PoolThread&& orig) = default;
     ~PoolThread();
 private:
     bool runFlag = true;
     void threadLoop();
-    void sleep();
     ThreadPool* const threadPool;
-    int* const waitQueue;
     static Mutex mutex;
 };
 

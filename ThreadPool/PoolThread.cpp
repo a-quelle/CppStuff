@@ -5,38 +5,25 @@
 using namespace std;
 
 Mutex PoolThread::mutex;
-
-int partialFutex(int *uaddr, int futex_op, int val)
-{
-    return syscall(SYS_futex, uaddr, futex_op, val,
-                   nullptr, nullptr, 0);
-}
-
-PoolThread::PoolThread(ThreadPool* threadPool) : threadPool(threadPool), waitQueue(&(threadPool->waitQueueNr)), 
+extern Mutex print;
+PoolThread::PoolThread(ThreadPool* threadPool) : threadPool(threadPool),
         thread(&PoolThread::threadLoop, this) {}
-PoolThread::PoolThread(PoolThread&& orig) : threadPool(orig.threadPool), waitQueue(orig.waitQueue){};
 
 PoolThread::~PoolThread(){}
 
 void PoolThread::threadLoop(){
+    print.lock();
+    std::cout << "starting thread " << std::this_thread::get_id() << std::endl;    
+    print.unlock();
     while(runFlag)
     {
+        threadPool->semaphore.wait();
         mutex.lock();
-        if(threadPool->work.empty())
-        {
-            mutex.unlock();
-            sleep();
-        }else{
-            void (*f)() = threadPool->work.back();
-            threadPool->work.pop_back();
-            mutex.unlock();
-            f();
-        }        
+        void (*f)() = threadPool->work.back();
+        threadPool->work.pop_back();
+        mutex.unlock();
+        f();
     }
-}
-
-void PoolThread::sleep(){
-    partialFutex(waitQueue, FUTEX_WAIT, *waitQueue);
 }
 
 
