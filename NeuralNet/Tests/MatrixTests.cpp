@@ -17,12 +17,6 @@ TEST_CASE( "Matrix creation and dereference", "[Matrix]" ) {
     REQUIRE( matrix[3] == 4); 
   }
 
-  matrix.clear();
-
-  SECTION("Clear workds correctly"){
-    REQUIRE( matrix.size() == 0 );
-  }
-
 }
 
 TEST_CASE( "Tensor creation and dereference", "[Tensor]" ) {
@@ -47,11 +41,4 @@ TEST_CASE( "Tensor creation and dereference", "[Tensor]" ) {
     REQUIRE( tensor[6] == 7);
     REQUIRE( tensor[7] == 8);
   }
-
-  tensor.clear();
-
-  SECTION("Clear workds correctly"){
-    REQUIRE( tensor.size() == 0 );
-  }
-
 }

@@ -10,17 +10,32 @@ NeuralLayer::NeuralLayer() :
 	numberOfInputs(0), numberOfNeurons(0)
 {}
 
-NeuralLayer::NeuralLayer(const int inputs, const int neurons) : 
-	numberOfInputs(inputs), numberOfNeurons(neurons)
+NeuralLayer::NeuralLayer(double* inputPtr, const int nInputs, const int nNeurons) : 
+	numberOfInputs(nInputs), numberOfNeurons(nNeurons)
 {
-	inputVector.resize(inputs + 1);
-	inputVector[0] = 1;
-	outputVector.resize(neurons);
-	weightMatrix.resize(neurons, inputs + 1);
-	dydx.resize(neurons, inputs);
-	dydw.resize(neurons, neurons, inputs + 1);
+	inputs = inputPtr;
+	outputs = new double[nNeurons+1]();
+	outputs[0] = 1;
+	weightMatrix.resize(nNeurons, nInputs + 1);
+	dydx.resize(nNeurons, nInputs);
+	dydw.resize(nNeurons, nNeurons, nInputs + 1);
 	generateRandomWeights();
 }
+
+NeuralLayer::NeuralLayer(NeuralLayer&& other): numberOfInputs(other.numberOfInputs), numberOfNeurons(other.numberOfNeurons), weightMatrix(std::move(other.weightMatrix)),
+	dydx(std::move(other.dydx)), dydw(std::move(other.dydw))
+{
+	inputs = other.inputs;
+	outputs = other.outputs;
+	other.outputs = nullptr;		
+}
+
+NeuralLayer::~NeuralLayer(void)
+{
+	delete[] outputs;
+}
+
+
 
 void NeuralLayer::generateRandomWeights()
 {
@@ -38,7 +53,7 @@ void HiddenLayer::calcDyDx()
 	{
 		for (int input = 0; input < numberOfInputs; input++)
 		{
-			dydx(output, input) = outputVector[output] * weightMatrix(output, input+1) * (1-outputVector[output]);
+			dydx(output, input) = outputs[output+1] * weightMatrix(output, input+1) * (1-outputs[output+1]);
 		}   
 	}
 }
@@ -53,9 +68,7 @@ void HiddenLayer::calcDyDw()
 			{				                        
 				if (weightOutput == output)
 				{
-					dydw(output, weightOutput, weightInput) = outputVector[output] * inputVector[weightInput] * (1 - outputVector[weightOutput]);
-				}else{
-					dydw(output, weightOutput, weightInput) = 0;
+					dydw(output, weightOutput, weightInput) = outputs[output+1] * inputs[weightInput] * (1 - outputs[weightOutput+1]);
 				}			                       
 			}
 		}
@@ -63,7 +76,7 @@ void HiddenLayer::calcDyDw()
 }
 
 HiddenLayer::HiddenLayer(){};
-HiddenLayer::HiddenLayer(const int inputs, const int neurons) : NeuralLayer(inputs, neurons){};
+HiddenLayer::HiddenLayer(double* inputPtr, const int inputs, const int neurons) : NeuralLayer(inputPtr, inputs, neurons){};
 
 double HiddenLayer::sigmoid(double x)
 {
@@ -75,12 +88,12 @@ void HiddenLayer::processInput()
 {
 	for (int i = 0; i < numberOfNeurons; i++)
 	{
-		outputVector[i] = 0;
-		for(int j = 0; j < numberOfInputs + 1; j++)
+		outputs[i + 1] = 0;
+		for(int j = 0; j < numberOfInputs+1; j++)
 		{
-			outputVector[i] += weightMatrix(i, j)*inputVector[j];
+			outputs[i + 1] += weightMatrix(i, j)*inputs[j];
 		}
-		outputVector[i] = sigmoid(outputVector[i]);
+		outputs[i + 1] = sigmoid(outputs[i + 1]);
 	}
 	calcDyDx();
 	calcDyDw();
@@ -97,11 +110,11 @@ void OutputLayer::calcDlnyDx()
 			{
 				if (neuron == output)
 				{
-					dydx(output, input) += weightMatrix(neuron, input+1) * (1 - outputVector[neuron]);
+					dydx(output, input) += weightMatrix(neuron, input+1) * (1 - outputs[neuron + 1]);
 				}
 				else
 				{
-					dydx(output, input) -= weightMatrix(neuron, input+1) * (outputVector[neuron]);
+					dydx(output, input) -= weightMatrix(neuron, input+1) * (outputs[neuron + 1]);
 				}
 			}
 		}
@@ -119,11 +132,11 @@ void OutputLayer::calcDlnyDw()
 				dydw(output, weightOutput, weightInput) = 0;
 				if (weightOutput == output)
 				{
-					dydw(output, weightOutput, weightInput) += inputVector[weightInput] * (1 - outputVector[weightOutput]);
+					dydw(output, weightOutput, weightInput) += inputs[weightInput] * (1 - outputs[weightOutput + 1]);
 				}
 				else
 				{
-					dydw(output, weightOutput, weightInput) -= inputVector[weightInput] * (outputVector[weightOutput]);
+					dydw(output, weightOutput, weightInput) -= inputs[weightInput] * (outputs[weightOutput + 1]);
 				}
 			}
 		}
@@ -134,31 +147,31 @@ void OutputLayer::processInput()
 {
 	for (int neuron = 0; neuron < numberOfNeurons; neuron++)
 	{
-		outputVector[neuron] = 0;
+		outputs[neuron + 1] = 0;
 		for (int input = 0; input < numberOfInputs + 1; input++)
 		{
-			outputVector[neuron] += weightMatrix(neuron, input) * inputVector[input];
+			outputs[neuron + 1] += weightMatrix(neuron, input) * inputs[input];
 		}                
 	}
-	vectorSigmoid(outputVector);
+	vectorSigmoid(outputs + 1, numberOfNeurons);
 	calcDlnyDw();
 	calcDlnyDx();
 }
 
 OutputLayer::OutputLayer(){};
-OutputLayer::OutputLayer(const int numberOfInputs, const int numberOfNeurons) : NeuralLayer(numberOfInputs, numberOfNeurons)
+OutputLayer::OutputLayer(double* inputPtr, const int numberOfInputs, const int numberOfNeurons) : NeuralLayer(inputPtr, numberOfInputs, numberOfNeurons)
 {
 }
 
-void OutputLayer::vectorSigmoid(vector<double>& input)
-        {           
-            double sum = 0;
-            double invSum;
-            for(int i = 0; i < input.size(); i++)
-                input[i] = exp(input[i]);
-            for(int i = 0; i < input.size(); i++)
-                sum += input[i];
-            invSum = 1 / sum;
-            for (int i = 0; i < numberOfNeurons; i++)
-                input[i] = invSum * input[i];
-        }
+void OutputLayer::vectorSigmoid(double* input, int size)
+{           
+	double sum = 0;
+	double invSum;
+	for(int i = 0; i < size; i++)
+		input[i] = exp(input[i]);
+	for(int i = 0; i < size; i++)
+		sum += input[i];
+	invSum = 1 / sum;
+	for (int i = 0; i < size; i++)
+		input[i] = invSum * input[i];
+}

@@ -4,32 +4,30 @@
 using namespace std;
 
 NeuralNet::NeuralNet(const int inputs, const int outputs, const int nLayers, const int neurons) :
-	numberOfLayers(nLayers), numberOfInputs(inputs), numberOfOutputs(outputs), neuronsPerLayer(neurons), outputLayer(OutputLayer(neurons, outputs))
+	numberOfLayers(nLayers), numberOfInputs(inputs), numberOfOutputs(outputs), neuronsPerLayer(neurons), outputLayer(nullptr, neurons, outputs)
 {	
 	layers.reserve(numberOfLayers);
 	createLayers();
+	outputLayer.inputs = layers.back().outputs;
 }
 
 void NeuralNet::createLayers()
 {
-	layers.push_back(HiddenLayer(numberOfInputs, neuronsPerLayer));
-	for (int i = 1; i < numberOfLayers; i++) {
-		layers.push_back(HiddenLayer(neuronsPerLayer, neuronsPerLayer));
+	layers.emplace_back(nullptr, numberOfInputs, neuronsPerLayer);
+	for (int i = 1; i < numberOfLayers; i++) {		
+		layers.emplace_back(layers.back().outputs, neuronsPerLayer, neuronsPerLayer);
 	}
 }
 
-vector<double> NeuralNet::processInput(vector<double>& input)
+double* NeuralNet::processInput(double* input)
 {
-	copy(input.data(), input.data() + numberOfInputs, layers[0].inputVector.data() + 1);
-	layers[0].processInput();
-	for (int i = 1; i < numberOfLayers; i++)
+	layers[0].inputs = input;
+	for (int i = 0; i < numberOfLayers; i++)
 	{
-		copy(layers[i-1].outputVector.data(), layers[i-1].outputVector.data() + neuronsPerLayer, layers[i].inputVector.data() + 1);
 		layers[i].processInput();
 	}
-	copy(layers[numberOfLayers - 1].outputVector.data(), layers[numberOfLayers - 1].outputVector.data() + neuronsPerLayer, outputLayer.inputVector.data() + 1);
 	outputLayer.processInput();
-	return outputLayer.outputVector;
+	return outputLayer.outputs;
 }
 
 void NeuralNet::saveWeights(const std::string& fileName)

@@ -1,12 +1,13 @@
 #include "Regression.h"
+#include <ctime>
 
+int getNumberOfWeights(NeuralNet& neuralNet);
 void updateNetworkWeights(NeuralNet& neuralNet);
 void calcScaledTotalGrad(NeuralNet& neuralNet);
 void calcGradFromDatum(const Datum& input, NeuralNet& neuralNet);
-void gradFromOutputLayer(const Datum& input, std::vector<double>& singleGradient, NeuralNet& neuralNet);
-void gradFromSecondHidden(const Datum& input, std::vector<double>& singleGradient, NeuralNet& neuralNet);
-void gradFromFirstHidden(Datum input, std::vector<double>& singleGradient, NeuralNet& neuralNet);
-std::vector<double> multiplyMatrices(std::vector<double>& leftMatrix, std::vector<double>& rightMatrix, NeuralNet& neuralNet);
+void gradFromOutputLayer(const Datum& input, double*& singleGradient, NeuralNet& neuralNet);
+void gradFromSecondHidden(const Datum& input, double*& singleGradient, NeuralNet& neuralNet);
+void gradFromFirstHidden(Datum input, double*& singleGradient, NeuralNet& neuralNet);
 
 using namespace std;
 
@@ -15,36 +16,54 @@ Datum::Datum(double lDist, double fDist, double rDist, Direction direction) :
     {}
 
 bool running = true;
-static double scale = 1;
+static double scale = 1./10000;
 vector<Datum> dataVector;
-static vector<double> weights;
-static vector<double> gradient;
-static vector<double> singleGradient;
+int weightsSize = 0;
+static double* weights;
+static double* gradient;
+static double* singleGradient;
 
-void gradientDescentLoop(NeuralNet& neuralNet)
+void gradientDescentLoop(NeuralNet& neuralNet, int batches)
 {
-
+    weightsSize = getNumberOfWeights(neuralNet);
+    weights = new double[weightsSize];
+    gradient = new double[weightsSize];
+    singleGradient = new double[weightsSize];
+    getNetworkWeights(neuralNet);
     while (running)
     {
         cout <<"Continuing, not converged yet..." << endl;
-        for (int iteration = 1; iteration <= 100; iteration++)
+        for (int batch = 1; batch <= batches; batch++)
         {
-            getNetworkWeights(neuralNet);
-            scale = 1.0/50;
+            std::clock_t start;
+            double duration;
+
+            start = std::clock();
             calcScaledTotalGrad(neuralNet);
-            for (int i = 0; i < weights.size(); i++)
+            for (int i = 0; i < weightsSize; i++)
                 weights[i] += gradient[i];
             updateNetworkWeights(neuralNet);
+
+            duration = ( std::clock() - start ) / (double) CLOCKS_PER_SEC;
+            cout << "This batch took " << duration << endl;
         }
         cout << "Saving Weights..." << endl;
         neuralNet.saveWeights("weights.dat");
     }
     cout << "Regression has stopped." << endl;
+    delete[] weights;
+    delete[] gradient;
+    delete[] singleGradient;
+}
+
+void setDataVector(std::vector<Datum> data)
+{
+    dataVector = data;
 }
 
 void generateData()
 {
-    dataVector.reserve(75*75*75);
+    dataVector.reserve(50*50*25);
     
     for (int lDist = 1; lDist <= 150; lDist += 4)
     {
@@ -63,38 +82,41 @@ void generateData()
     }
 }
 
+int getNumberOfWeights(NeuralNet& neuralNet)
+{
+    int numberOfWeights = 0;
+    for_each(begin(neuralNet.layers), end(neuralNet.layers),
+    [&](HiddenLayer& layer){
+        numberOfWeights += layer.numberOfNeurons * (layer.numberOfInputs+1);
+    });
+    OutputLayer& outputLayer = neuralNet.outputLayer;
+    numberOfWeights += outputLayer.numberOfNeurons * (outputLayer.numberOfInputs+1);
+    return numberOfWeights;
+}
+
 void getNetworkWeights(NeuralNet& neuralNet)
 {
-    weights.clear();
+    memset(weights, 0, weightsSize*sizeof(double));
+    double* weightsCopy = weights;
     for_each(begin(neuralNet.layers), end(neuralNet.layers),
-    [](HiddenLayer& layer){
-        for (int neuron = 0; neuron < layer.numberOfNeurons; neuron++)
-        {
-            for (int weight = 0; weight < layer.numberOfInputs + 1; weight++)
-            {
-                weights.push_back(layer.weightMatrix(neuron, weight));
-            }
-        }
+    [&](HiddenLayer& layer){
+        memcpy(weightsCopy, layer.weightMatrix.getData(), layer.weightMatrix.size()*sizeof(double));
+        weightsCopy += layer.weightMatrix.size();
     });
-    for (int neuron = 0; neuron < neuralNet.outputLayer.numberOfNeurons; neuron++)
-    {
-        for (int weight = 0; weight < neuralNet.outputLayer.numberOfInputs + 1; weight++)
-        {
-            weights.push_back(neuralNet.outputLayer.weightMatrix(neuron, weight));
-        }
-    }
+    memcpy(weightsCopy, neuralNet.outputLayer.weightMatrix.getData(), neuralNet.outputLayer.weightMatrix.size()*sizeof(double));
 }
 
 void updateNetworkWeights(NeuralNet& neuralNet)
 {
+    double* weightsPtr = weights;
     for_each(begin(neuralNet.layers), end(neuralNet.layers),
-    [](HiddenLayer& layer){
+    [&weightsPtr](HiddenLayer& layer){
         for (int neuron = 0; neuron < layer.numberOfNeurons; neuron++)
         {
             for (int weight = 0; weight < layer.numberOfInputs + 1; weight++)
             {
-                layer.weightMatrix(neuron, weight) = weights[0];
-                weights.erase(weights.begin());
+                layer.weightMatrix(neuron, weight) = *weightsPtr;
+                ++weightsPtr;
             }
         }
     });
@@ -102,101 +124,229 @@ void updateNetworkWeights(NeuralNet& neuralNet)
     {
         for (int weight = 0; weight < neuralNet.outputLayer.numberOfInputs + 1; weight++)
         {
-            neuralNet.outputLayer.weightMatrix(neuron, weight) = weights[0];
-            weights.erase(weights.begin());
+            neuralNet.outputLayer.weightMatrix(neuron, weight) = *weightsPtr;
+            ++weightsPtr;
         }
     }
 }
 
 void calcScaledTotalGrad(NeuralNet& neuralNet)
 {
-    gradient = vector<double>(weights.size());
-    neuralNet.lock.lock();          
+    memset(gradient, 0, weightsSize*sizeof(double));
+    //neuralNet.lock.lock();
+    double logLoss = 0;      
     for_each(begin(dataVector), end(dataVector),
      [&](Datum& datum){
         calcGradFromDatum(datum, neuralNet);
-        for (int i = 0; i < singleGradient.size(); i++){
+        for (int i = 0; i < weightsSize; i++){
             gradient[i] += singleGradient[i];}
+        logLoss -= log(neuralNet.outputLayer.outputs[datum.direction+1]);
     });
-    neuralNet.lock.unlock();
+    logLoss /= dataVector.size();
+    //neuralNet.lock.unlock();
     double normalisation = 0;
-    for_each(gradient.begin(), gradient.end(),
-    [&](double x){
-        normalisation += x * x;
-    });
+    for(int i = 0; i < weightsSize; ++i )
+    {
+        int x = gradient[i];
+        normalisation += x*x;
+    }
+    cout << "Loss is now " << logLoss << endl;;
     cout << "Norm squared is now " << normalisation << endl;;
     if (normalisation < 0.01)
         running = false;
     normalisation = 1 / sqrt(normalisation);
-    for (int i = 0; i < gradient.size(); i++)
+    for (int i = 0; i < weightsSize; i++)
     {                
-        gradient[i] *= scale * normalisation;
+        gradient[i] *= scale;
     }
 }        
 
 //Only works for exactly 2 hidden layers.
 void calcGradFromDatum(const Datum& input, NeuralNet& neuralNet)
 {    
-    singleGradient.clear();
+    memset(singleGradient, 0, weightsSize*sizeof(double));
     vector<double> layerGrad;
-    neuralNet.processInput(vector<double> { 0.01 * input.lDist, 0.01 * input.fDist, 0.01 * input.rDist});
+    double toProcess[4] = { 1,  0.01 * input.lDist, 0.01 * input.fDist, 0.01 * input.rDist}; //leading 1 for affine inputs
+    neuralNet.processInput(toProcess);
 
-    gradFromFirstHidden(input, singleGradient, neuralNet);
-    gradFromSecondHidden(input, singleGradient, neuralNet);    
-    gradFromOutputLayer(input, singleGradient, neuralNet);
+    double* singGradCpy = singleGradient;
+
+    gradFromFirstHidden(input, singGradCpy, neuralNet);
+    gradFromSecondHidden(input, singGradCpy, neuralNet);    
+    gradFromOutputLayer(input, singGradCpy, neuralNet);
 }
 
-void gradFromOutputLayer(const Datum& input, vector<double>& singleGradient, NeuralNet& neuralNet)
+void gradFromOutputLayer(const Datum& input, double*& singleGradient, NeuralNet& neuralNet)
 {
-    vector<double> layerGrad(neuralNet.numberOfOutputs * (neuralNet.neuronsPerLayer + 1));
-
-    for (int i = 0; i < neuralNet.numberOfOutputs; i++)
+    int iSize = neuralNet.numberOfOutputs;
+    int jSize = neuralNet.neuronsPerLayer + 1;
+    double* yw = &neuralNet.outputLayer.dydw(input.direction,0,0);
+       
+    for (int i = 0; i < iSize*jSize; i++)
     {
-        for (int j = 0; j < neuralNet.neuronsPerLayer + 1; j++)
-        {
-            layerGrad[i*(neuralNet.neuronsPerLayer + 1) + j] = neuralNet.outputLayer.dydw
-                (input.direction, i, j);
-        }
+        singleGradient[i] = yw[i];  
     }
-    for_each(layerGrad.begin(), layerGrad.end(), 
-    [&](double x){
-        singleGradient.push_back(x);});    
 }
 
-void gradFromSecondHidden(const Datum& input,  vector<double>& singleGradient, NeuralNet& neuralNet)
+void gradFromSecondHidden(const Datum& input,  double*& singleGradient, NeuralNet& neuralNet)
 {
-    vector<double> layerGrad(neuralNet.neuronsPerLayer * (neuralNet.neuronsPerLayer + 1));
-    for (int i = 0; i < neuralNet.neuronsPerLayer; i++)
-    {
-        for (int j = 0; j < neuralNet.neuronsPerLayer + 1; j++)
-        {
-            for (int k = 0; k < neuralNet.neuronsPerLayer; k++)
-                layerGrad[i*(neuralNet.neuronsPerLayer + 1) + j] += neuralNet.outputLayer.dydx(input.direction, k) 
-                    * neuralNet.layers[1].dydw(k, i, j);
-        }
+    const int lineSize = 16;
+    const int iSize = neuralNet.neuronsPerLayer;
+    const int jSize = neuralNet.neuronsPerLayer + 1;
+    //Tiled algorithm
+    double* outLayer = &neuralNet.outputLayer.dydx(input.direction, 0);
+    Tensor<double>& hidLayer = neuralNet.layers[1].dydw;
+    for(int jb = 0, jBound = iSize*jSize; jBound > 0; jb += lineSize, jBound -= lineSize)
+    { 
+        double* res = &singleGradient[jb]; 
+        if(jBound >= lineSize)
+        {                  
+            for (int k = 0; k < iSize; k++)
+            {                 
+                double yx = outLayer[k], *yw = &hidLayer(k,0,jb);
+                for (int j = 0; j < lineSize; j++)
+                {
+                    res[j] +=  yx * yw[j];
+                }                    
+            } 
+        }  
+        else
+        {                  
+            for (int k = 0; k < iSize; k++)
+            {                 
+                double yx = outLayer[k], *yw = &hidLayer(k,0,jb);
+                for (int j = 0; j < jBound; j++)
+                {
+                    res[j] +=  yx * yw[j];
+                }                    
+            }             
+        }                 
     }
     
-    for_each(layerGrad.begin(), layerGrad.end(), 
-    [&](double x){
-        singleGradient.push_back(x);});
+
+    //Naive algorithm   
+    // for (int i = 0; i < iSize; i++)
+    // {
+    //     for (int j = 0; j < jSize; j++)
+    //     {
+    //             for (int k = 0; k < iSize; k++)
+    //         {
+    //             singleGradient[i*jSize + j] += neuralNet.outputLayer.dydx(input.direction, k) 
+    //                 * neuralNet.layers[1].dydw(k, i, j);
+    //         }
+    //     }
+    // }
+
+    singleGradient += iSize*jSize; 
 }
 
-void gradFromFirstHidden(Datum input, vector<double>& singleGradient, NeuralNet& neuralNet)
+void gradFromFirstHidden(Datum input, double*& singleGradient, NeuralNet& neuralNet)
 {
-    vector<double> layerGrad(neuralNet.neuronsPerLayer * (neuralNet.numberOfInputs + 1));
-    for (int i = 0; i < neuralNet.neuronsPerLayer; i++)
+    const int lineSize = 16;
+    const int iSize = neuralNet.neuronsPerLayer;
+    const int jSize = neuralNet.numberOfInputs + 1;
+
+    double* outLayer = &neuralNet.outputLayer.dydx(input.direction, 0);
+    Matrix<double>& hidLayer1 = neuralNet.layers[1].dydx;
+    Tensor<double>& hidLayer0 = neuralNet.layers[0].dydw;
+    
+    for(int lb = 0, lBound = iSize; lBound > 0; lb+= lineSize, lBound -= lineSize)
     {
-        for (int j = 0; j < neuralNet.numberOfInputs + 1; j++)
+        if(lBound >= lineSize)
         {
-            for (int k = 0; k < neuralNet.neuronsPerLayer; k++)
-                for(int l = 0; l < neuralNet.neuronsPerLayer; l++){
-                    layerGrad[i*(neuralNet.numberOfInputs + 1) + j] += 
-                    neuralNet.outputLayer.dydx(input.direction, k) * neuralNet.layers[1].dydx(k, l) * neuralNet.layers[0].dydw(l, i, j);
+            double* blockyx = &hidLayer1[lb];
+            for (int jb = 0, jBound = iSize*jSize; jBound > 0; jb+=lineSize, jBound -= lineSize)
+            {
+                double* blockGrad = &singleGradient[jb];
+                if(jBound >= lineSize)
+                {
+                    for(int l = 0; l < lineSize; l++)
+                    {
+                        double* yw = &hidLayer0(l+lb,0,0)+jb;
+                        double outXyx = 0;
+                        for (int k = 0; k < iSize; k++)
+                        {
+                            outXyx += outLayer[k]*blockyx[k*iSize+l];
+                        }                      
+                        for(int j = 0; j < lineSize; j++)
+                        {
+                            blockGrad[j] += outXyx * yw[j];
+                        }
+                    }
                 }
+                else
+                {
+                    for(int l = 0; l < lineSize; l++)
+                    {
+                        double* yw = &hidLayer0(l+lb,0,0)+jb;
+                        double outXyx = 0;
+                        for (int k = 0; k < iSize; k++)
+                        {
+                            outXyx += outLayer[k]*blockyx[k*iSize+l];
+                        }                      
+                        for(int j = 0; j < jBound; j++)
+                        {
+                            blockGrad[j] += outXyx * yw[j];
+                        }
+                    }                   
+                }
+            }
         }
+        else
+        {
+            double* blockyx = &hidLayer1[lb];
+            for (int jb = 0, jBound = iSize*jSize; jBound > 0; jb+=lineSize, jBound -= lineSize)
+            {
+                double* blockGrad = &singleGradient[jb];
+                if(jBound >= lineSize)
+                {
+                    for(int l = 0; l < lBound; l++)
+                    {
+                        double* yw = &hidLayer0(l+lb,0,0)+jb;
+                        double outXyx = 0;
+                        for (int k = 0; k < iSize; k++)
+                        {
+                            outXyx += outLayer[k]*blockyx[k*iSize+l];
+                        }                      
+                        for(int j = 0; j < lineSize; j++)
+                        {
+                            blockGrad[j] += outXyx * yw[j];
+                        }
+                    }
+                }
+                else
+                {
+                    for(int l = 0; l < lBound; l++)
+                    {
+                        double* yw = &hidLayer0(l+lb,0,0)+jb;
+                        double outXyx = 0;
+                        for (int k = 0; k < iSize; k++)
+                        {
+                            outXyx += outLayer[k]*blockyx[k*iSize+l];
+                        }                      
+                        for(int j = 0; j < jBound; j++)
+                        {
+                            blockGrad[j] += outXyx * yw[j];
+                        }
+                    }                  
+                }
+            }
+        }        
     }
-    
-    for_each(layerGrad.begin(), layerGrad.end(), 
-    [&](double x){
-        singleGradient.push_back(x);}); 
+
+    // for (int i = 0; i < iSize; i++)
+    // {
+    //     for (int j = 0; j < jSize; j++)
+    //     {
+    //         for (int k = 0; k < iSize; k++)
+    //         {
+    //             for(int l = 0; l < iSize; l++)
+    //             {
+    //                 singleGradient[i*jSize + j] += 
+    //                 neuralNet.outputLayer.dydx(input.direction, k) * neuralNet.layers[1].dydx(k, l) * neuralNet.layers[0].dydw(l, i, j);
+    //             }
+    //         }            
+    //     }
+    // }
+    singleGradient += iSize*jSize; 
 }

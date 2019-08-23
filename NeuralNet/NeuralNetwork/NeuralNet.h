@@ -2,7 +2,7 @@
 #include "NeuralLayer.h"
 #include <algorithm>
 #include <string>
-#include <mutex>
+//#include <mutex>
 
 struct NeuralNet
 {
@@ -10,7 +10,7 @@ struct NeuralNet
 
 	void createLayers();
 	
-	std::vector<double> processInput(std::vector<double>& input);
+	double* processInput(double* input);
 	void saveWeights(const std::string& fileName);
 	void readWeights(const std::string& fileName);
 
@@ -21,6 +21,6 @@ struct NeuralNet
 	const int numberOfInputs;
 	const int numberOfOutputs;
 	const int neuronsPerLayer;
-	std::mutex lock;
+	//std::mutex lock;
 };
 

@@ -3,13 +3,15 @@
 #include "..\NeuralNetwork\NeuralLayer.h"
 #include "..\NeuralNetwork\NeuralNet.h"
 
+double* e1 = new double[3]{1,0,0};
+double* e2 = new double[3]{0,1,0};
+double* e3 = new double[3]{0,0,1};
+
 TEST_CASE( "All HiddenLayer stuff", "[HiddenLayer]" ) {
-  HiddenLayer hiddenLayer(2,2);
+  HiddenLayer hiddenLayer(e1, 2,2);
 
   SECTION( "vectors are correct size" ) {        
         REQUIRE( hiddenLayer.weightMatrix.size() == 6 );
-        REQUIRE( hiddenLayer.outputVector.size() == 2 );
-        REQUIRE( hiddenLayer.inputVector.size() == 3 );
     }
 
     hiddenLayer.weightMatrix[0] = 0;
@@ -19,20 +21,21 @@ TEST_CASE( "All HiddenLayer stuff", "[HiddenLayer]" ) {
     hiddenLayer.weightMatrix[4] = 0;
     hiddenLayer.weightMatrix[5] = 0;
 
-    SECTION( "affine input processed correctly" ) {        
-        hiddenLayer.inputVector = std::vector<double>{1,0,0};
+    SECTION( "affine input processed correctly" ) {    
         hiddenLayer.processInput();
-        REQUIRE( hiddenLayer.outputVector[0] == 1 / (1 + exp(0)) );
-        REQUIRE( hiddenLayer.outputVector[1] == 1 / (1 + exp(-1)) );
+        REQUIRE( hiddenLayer.outputs[0] == 1);
+        REQUIRE( hiddenLayer.outputs[1] == 1 / (1 + exp(0)) );
+        REQUIRE( hiddenLayer.outputs[2] == 1 / (1 + exp(-1)) );
     }
     SECTION( "linear input processed correctly" ) {        
-        hiddenLayer.inputVector = std::vector<double>{0,1,0};
+        hiddenLayer.inputs = e2;
         hiddenLayer.processInput();
-        REQUIRE( hiddenLayer.outputVector[0] == 1 / (1 + exp(-1)) );
-        REQUIRE( hiddenLayer.outputVector[1] == 1 / (1 + exp(0)) );
+        REQUIRE( hiddenLayer.outputs[0] == 1);
+        REQUIRE( hiddenLayer.outputs[1] == 1 / (1 + exp(-1)) );
+        REQUIRE( hiddenLayer.outputs[2] == 1 / (1 + exp(0)) );
     }
             
-    hiddenLayer.inputVector = std::vector<double>{0,1,0};
+    hiddenLayer.inputs = e2;
     hiddenLayer.processInput();
 
     SECTION( "dy/dx calculated correctly" ) {
@@ -60,12 +63,10 @@ TEST_CASE( "All HiddenLayer stuff", "[HiddenLayer]" ) {
 }
 
 TEST_CASE( "All OutputLayer stuff", "[OutputLayer]" ) {
-  OutputLayer outputLayer(2,2);
+  OutputLayer outputLayer(e1, 2,2);
 
   SECTION( "vectors are correct size" ) {        
         REQUIRE( outputLayer.weightMatrix.size() == 6 );
-        REQUIRE( outputLayer.outputVector.size() == 2 );
-        REQUIRE( outputLayer.inputVector.size() == 3 );
     }
  
     outputLayer.weightMatrix[0] = 0;
@@ -75,22 +76,23 @@ TEST_CASE( "All OutputLayer stuff", "[OutputLayer]" ) {
     outputLayer.weightMatrix[4] = 0;
     outputLayer.weightMatrix[5] = 0;
 
-    SECTION( "affine input processed correctly" ) {        
-        outputLayer.inputVector = std::vector<double>{1,0,0};
+    SECTION( "affine input processed correctly" ) {   
         outputLayer.processInput();
         //Check that floating point errors are smaller than 10^(-15)
-        REQUIRE( abs(outputLayer.outputVector[0] - exp(0) / ( exp(1) + exp(0))) < 1./1000000000000000 );
-        REQUIRE( abs(outputLayer.outputVector[1] - exp(1) / ( exp(1) + exp(0))) < 1./1000000000000000 );
+        REQUIRE( outputLayer.outputs[0] == 1);
+        REQUIRE( abs(outputLayer.outputs[1] - exp(0) / ( exp(1) + exp(0))) < 1./1000000000000000 );
+        REQUIRE( abs(outputLayer.outputs[2] - exp(1) / ( exp(1) + exp(0))) < 1./1000000000000000 );
     }
     SECTION( "linear input processed correctly" ) {        
-        outputLayer.inputVector = std::vector<double>{0,1,0};
+        outputLayer.inputs = e2;
         outputLayer.processInput();
         //Check that floating point errors are smaller than 10^(-15)
-        REQUIRE( abs(outputLayer.outputVector[0] -  exp(1) / ( exp(1) + exp(0))) < 1./1000000000000000 );
-        REQUIRE( abs(outputLayer.outputVector[1] - exp(0) / ( exp(1) + exp(0))) < 1./1000000000000000 );
+        REQUIRE( outputLayer.outputs[0] == 1);
+        REQUIRE( abs(outputLayer.outputs[1] -  exp(1) / ( exp(1) + exp(0))) < 1./1000000000000000 );
+        REQUIRE( abs(outputLayer.outputs[2] - exp(0) / ( exp(1) + exp(0))) < 1./1000000000000000 );
     }
             
-    outputLayer.inputVector = std::vector<double>{0,1,0};
+    outputLayer.inputs = e2;
     outputLayer.processInput();
 
     SECTION( "dy/dx calculated correctly" ) {
@@ -144,19 +146,22 @@ TEST_CASE( "NeuralNet functions", "[NeuralNet]" ) {
     neuralNet.outputLayer.weightMatrix[5] = 0;
     neuralNet.outputLayer.weightMatrix[6] = 1;
     neuralNet.outputLayer.weightMatrix[7] = 0;
-    neuralNet.processInput(std::vector<double>{1,2});
+    double* inputs = new double[3]{1,1,2};
+    neuralNet.processInput(inputs); //leading 1 for affine inputs
 
     SECTION("Network processes input correctly"){
-        REQUIRE(neuralNet.layers[0].inputVector[0] == 1);
-        REQUIRE(neuralNet.layers[0].inputVector[1] == 1);
-        REQUIRE(neuralNet.layers[0].inputVector[2] == 2);
-        REQUIRE(neuralNet.layers[1].inputVector[0] == 1);
-        REQUIRE(neuralNet.layers[1].inputVector[1] == neuralNet.layers[0].outputVector[0]);
-        REQUIRE(neuralNet.layers[1].inputVector[2] == neuralNet.layers[0].outputVector[1]);
-        REQUIRE(neuralNet.layers[1].inputVector[3] == neuralNet.layers[0].outputVector[2]);
-        REQUIRE(neuralNet.outputLayer.inputVector[0] == 1);
-        REQUIRE(neuralNet.outputLayer.inputVector[1] == neuralNet.layers[1].outputVector[0]);
-        REQUIRE(neuralNet.outputLayer.inputVector[2] == neuralNet.layers[1].outputVector[1]);
-        REQUIRE(neuralNet.outputLayer.inputVector[3] == neuralNet.layers[1].outputVector[2]);
+        REQUIRE(neuralNet.layers[0].inputs[0] == 1);
+        REQUIRE(neuralNet.layers[0].inputs[1] == 1);
+        REQUIRE(neuralNet.layers[0].inputs[2] == 2);
+        REQUIRE(neuralNet.layers[1].inputs[0] == 1);
+        REQUIRE(neuralNet.layers[1].inputs[0] == neuralNet.layers[0].outputs[0]);
+        REQUIRE(neuralNet.layers[1].inputs[1] == neuralNet.layers[0].outputs[1]);
+        REQUIRE(neuralNet.layers[1].inputs[2] == neuralNet.layers[0].outputs[2]);
+        REQUIRE(neuralNet.layers[1].inputs[3] == neuralNet.layers[0].outputs[3]);
+        REQUIRE(neuralNet.outputLayer.inputs[0] == 1);
+        REQUIRE(neuralNet.outputLayer.inputs[0] == neuralNet.layers[1].outputs[0]);
+        REQUIRE(neuralNet.outputLayer.inputs[1] == neuralNet.layers[1].outputs[1]);
+        REQUIRE(neuralNet.outputLayer.inputs[2] == neuralNet.layers[1].outputs[2]);
+        REQUIRE(neuralNet.outputLayer.inputs[3] == neuralNet.layers[1].outputs[3]);
     }
 }

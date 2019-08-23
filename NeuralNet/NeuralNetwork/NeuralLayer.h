@@ -8,9 +8,12 @@ struct NeuralLayer
 	friend class NeuralNet;
 
 	NeuralLayer();
-	NeuralLayer(const int inputs, const int neurons);
-	std::vector<double> inputVector;
-	std::vector<double> outputVector;	
+	NeuralLayer(double* inputPtr, const int inputs, const int neurons);
+	NeuralLayer(NeuralLayer&  other) = delete;
+	NeuralLayer(NeuralLayer&&  other);
+	~NeuralLayer();
+	double* inputs = nullptr;
+	double* outputs = nullptr;	
 	
 	const int numberOfInputs;
 	const int numberOfNeurons;
@@ -24,7 +27,7 @@ struct NeuralLayer
 struct HiddenLayer : NeuralLayer
 {
 	HiddenLayer();
-	HiddenLayer(const int inputs, const int neurons);
+	HiddenLayer(double* inputPtr, const int inputs, const int neurons);
 	void calcDyDx();
 	void calcDyDw();
 	void processInput();
@@ -37,12 +40,12 @@ private:
 struct OutputLayer : NeuralLayer
 {
 	OutputLayer();
-	OutputLayer(const int inputs, const int neurons);
+	OutputLayer(double* inputPtr, const int inputs, const int neurons);
 	void calcDlnyDx();
 	void calcDlnyDw();
 	void processInput();
 
 private:
-	void vectorSigmoid(std::vector<double>& input);
+	void vectorSigmoid(double* input, int size);
 };
 
